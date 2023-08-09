@@ -9,6 +9,7 @@ Turn ON 2 min and OFF 1 min continue for 24 cycles
 #include <ModbusRTUMaster.h>
 #include <RS485.h>
 
+// setup lcd to display information 
 LiquidCrystal lcd(Q0_7, Q0_6, Q0_3, Q0_2, Q0_1, Q0_0);
 
 ModbusRTUMaster master(RS485);
@@ -33,80 +34,11 @@ void setup() {
 
   lcd.begin(16, 2);
   lcd.clear();
-
-  lcd.setCursor(0, 0);
-  lcd.print("Wait for power");
-  
-  // Read communication status, if PSU all on power, start the program
-  while (power != 0) {
-    if (millis() - lastSentTime > 1000) {
-        // (readHoldingRegisters(slave add, start add, number of reg))
-        // start add: 0 - power, 18 - state, 37 - temp
-      if (!master.readHoldingRegisters(1, 18, 4)) {
-        Serial.print("Read registers failed ");
-        flag = 0;
-        Serial.print(millis());
-        Serial.print(" ");
-        Serial.println(lastSentTime);
-        lcd.setCursor(0, 1);
-        lcd.print("Read failed");
-      } else {
-        flag = 1;
-      }
-
-      lastSentTime = millis();
-    }
-
-    // Check available responses often
-    if (master.isWaitingResponse() && flag == 1) {
-      ModbusResponse response = master.available();
-      if (response) {
-        if (response.hasError()) {
-          // Response failure treatment. You can use response.getErrorCode()
-          // to get the error code.
-          Serial.print("Read Error ");
-          Serial.println(response.getErrorCode());
-        } else {
-          // Get the discrete inputs values from the response
-          if (response.hasError()) {
-            // Response failure treatment. You can use response.getErrorCode()
-            // to get the error code.
-            Serial.print("Read Error ");
-            Serial.println(response.getErrorCode());
-          } else {
-            Serial.print("Communication status: ");
-            //lcd.clear();
-            lcd.setCursor(0, 1);
-            lcd.print("Com:");
-            power = 0;
-            for (int i = 0; i < 4; ++i) {
-              int res = response.getRegister(i);
-              Serial.print(res);
-              if (res == 0) {
-                lcd.print("v ");
-              } else {
-                lcd.print(res,HEX);
-                lcd.print(" ");
-              }
-              commStat[i] = res;
-              Serial.print(',');
-
-              power = power + res;
-            }
-            Serial.println();
-
-          }
-        }
-      }
-    }
-  }
-
   lcd.setCursor(0, 0);
   lcd.print("Session Begin       ");
   delay(1000);
 
   lastTime = millis();
-  delay(1000);
 }
 
 void loop() {
@@ -167,85 +99,24 @@ void loop() {
     }
   }
 
-// check comm status of each PSU every 10s
-  if (millis() % 10000 == 0) {
-    for (int k = 0; k < 4; ++k) {
-      if (commStat[k] != 0) {
-        Serial.print(k);
-        Serial.print(" PSU error:");
-        Serial.print(commStat[k]);
-        Serial.println();
-
-        lcd.setCursor(0, 1);
-        lcd.print("PSU ");
-        lcd.print(k);
-        lcd.print(" error:");
-        lcd.print(commStat[k]);
-        lcd.print("          ");
-        input[k] = 0;
-      }
-    }
-  }
-
-  // read comm status
-  if (millis() - lastSentTime > 1000) {
-      // (readHoldingRegisters(slave add, start add, number of reg))
-      // start add: 0 - power, 18 - state, 37 - temp
-    if (!master.readHoldingRegisters(1, 18, 4)) {
-      Serial.print("Read comm failed ");
-      flag = 0;
-      Serial.print(millis());
-      Serial.print(" ");
-      Serial.println(lastSentTime);
-
+  // check communication status of each PSU
+  for (int k = 0; k < 4; ++k) {
+    if (commStat[k] != 0) {
+      Serial.print(k);
+      Serial.print(" PSU error:");
+      Serial.print(commStat[k]);
+      Serial.println();
+  
       lcd.setCursor(0, 1);
-      lcd.print("Read comm failed");
-      lcd.print("              ");
-    } else {
-      flag = 1;
+      lcd.print("PSU ");
+      lcd.print(k);
+      lcd.print(" error:");
+      lcd.print(commStat[k]);
+      lcd.print("          ");
+      input[k] = 0;
     }
-
-    lastSentTime = millis();
-  }
-
-  if (master.isWaitingResponse() && flag == 1) {
-    ModbusResponse response = master.available();
-    if (response) {
-      if (response.hasError()) {
-        // Response failure treatment. You can use response.getErrorCode()
-        // to get the error code.
-        Serial.print("Read Error ");
-        Serial.println(response.getErrorCode());
-      } else {
-        // Get the discrete inputs values from the response
-        if (response.hasError()) {
-          // Response failure treatment. You can use response.getErrorCode()
-          // to get the error code.
-          Serial.print("Read Error ");
-          Serial.println(response.getErrorCode());
-        } else {
-          Serial.print("Communication status: ");
-          lcd.setCursor(0, 1);
-          lcd.print("Com:");
-          for (int i = 0; i < 4; ++i) {
-            int res = response.getRegister(i);
-            Serial.print(res);
-            if (res == 0) {
-              lcd.print("v ");
-            } else {
-              lcd.print(res);
-              lcd.print(" ");
-            }
-            commStat[i] = res;
-            Serial.print(',');
-          }
-          lcd.print("             ");
-          Serial.println();
-        }
-      }
-    }
-  }
-
+}
+  
   // Power scheme
   // 1 min ON, 1.5 min OFF, 20%->50% power, 5% increment
   if (cycle > maxCycle) {
@@ -322,7 +193,8 @@ void loop() {
       }
     }
   }
-  
+
+  // print current cycle and time
   if (millis() % 5000 == 0) {
     Serial.println(cycle);
     if (cycle > maxCycle) {
@@ -339,8 +211,7 @@ void loop() {
       lcd.print(maxCycle);
       lcd.print(" ");
     }
-
-    //int timeRemain = 12*6 - millis()/60000;
+    
     int timeBegin = millis()/60000;
     lcd.print(timeBegin);
     lcd.print("min begin");
