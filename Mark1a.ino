@@ -2,22 +2,20 @@
 Alfred Liang 07/08/2023
 This Program is for M-Duino 21+ PLC setting as master device
 to communicate via RS485 Modbus RTU for Mark Ia reactor
-Turn ON 2 min and OFF 1 min continue for 24 cycles
+
+In the main loop there are two functions: 
+Read registers for temperature and Write registers for power
 */
 
 #include <LiquidCrystal.h>
 #include <ModbusRTUMaster.h>
 #include <RS485.h>
 
-// setup lcd to display information 
-LiquidCrystal lcd(Q0_7, Q0_6, Q0_3, Q0_2, Q0_1, Q0_0);
-
 ModbusRTUMaster master(RS485);
 uint32_t lastSentTime = 0UL;
 uint32_t lastTime = 0UL;
 const uint32_t baudrate = 19200UL; 
-unsigned long time[4] = {millis(),millis(),millis(),millis()};
-uint16_t commStat[4] = {1,1,1,1};
+uint16_t temperature[4] = {70,70,70,70};
 uint16_t input[4] = {50,50,50,50};
 int flag = 0;
 int cycle = 1;
@@ -27,24 +25,15 @@ int power = 50;
 
 //////////////////////////////////////////////////////////////////
 void setup() {
-  delay(1000);
   Serial.begin(19200UL); // Start the serial port
   RS485.begin(baudrate, HALFDUPLEX, SERIAL_8E1); // SERIAL_8E1: 8 data bit, Even parity, 1 stop bit
   master.begin(baudrate);
-
-  lcd.begin(16, 2);
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Session Begin       ");
-  delay(1000);
-
-  lastTime = millis();
 }
 
 void loop() {
 
   // read temperature
-  if (millis() - lastSentTime > 1000) {
+  if (millis() - lastSentTime > 2000) {
       // (readHoldingRegisters(slave add, start add, number of reg))
       // start add: 0 - power, 18 - state, 36 - temp
     if (!master.readHoldingRegisters(1, 36, 4)) {
@@ -53,10 +42,6 @@ void loop() {
       Serial.print(millis());
       Serial.print(" ");
       Serial.println(lastSentTime);
-
-      lcd.setCursor(0, 1);
-      lcd.print("Read tem failed");
-      lcd.print("              ");
     } else {
       flag = 3;
     }
@@ -81,17 +66,11 @@ void loop() {
           Serial.println(response.getErrorCode());
         } else {
           Serial.print("Temperature status: ");
-          lcd.setCursor(0, 0);
-          lcd.print("Temp:");
           for (int i = 0; i < 4; ++i) {
             int res = response.getRegister(i);
             Serial.print(res);
-            commStat[i] = res;
             Serial.print(',');
-            lcd.print(res);
-            lcd.print(" ");
           }
-          lcd.print("              ");
           Serial.println();
 
         }
@@ -99,33 +78,22 @@ void loop() {
     }
   }
 
-  // check communication status of each PSU
+  // check temperature
   for (int k = 0; k < 4; ++k) {
-    if (commStat[k] != 0) {
+    if (temperature[k] > 95) {
       Serial.print(k);
       Serial.print(" PSU error:");
-      Serial.print(commStat[k]);
+      Serial.print(temperature[k]);
       Serial.println();
-  
-      lcd.setCursor(0, 1);
-      lcd.print("PSU ");
-      lcd.print(k);
-      lcd.print(" error:");
-      lcd.print(commStat[k]);
-      lcd.print("          ");
-      input[k] = 0;
     }
-}
+  }
   
   // Power scheme
-  // 1 min ON, 1.5 min OFF, 20%->50% power, 5% increment
+  // 1 min ON, 1.5 min OFF
   if (cycle > maxCycle) {
     power = 0;
   } else if ((millis()-lastTime) < 60000) {
-    power = round(26.4 + (cycle - 1) *6.6);
-    if (power > 66) {
-      power = 66;
-    }
+    power = 66
   } else if ((millis()-lastTime) >= 60000 && (millis()-lastTime) < 150000) {
     power = 0; // 1.5 min OFF 
   } else {
@@ -138,7 +106,7 @@ void loop() {
   }
 
   // write power to PSUs
-  if (millis() - lastSentTime > 1000) {
+  if (millis() - lastSentTime > 2000) {
       // start add: 0 - power, 18 - state, 37 - temp
       if (!master.writeMultipleRegisters(1, 0, input, 4)) {
         Serial.print("Write registers failed ");
@@ -146,10 +114,6 @@ void loop() {
         Serial.print(" ");
         Serial.println(lastSentTime);
         flag = 0;
-
-        lcd.setCursor(0, 1);
-        lcd.print("Write failed");
-
       } else {
         flag = 2;
       }
@@ -196,25 +160,21 @@ void loop() {
 
   // print current cycle and time
   if (millis() % 5000 == 0) {
-    Serial.println(cycle);
+    Serial.print(cycle);
     if (cycle > maxCycle) {
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print(maxCycle);
-      lcd.print("/");
-      lcd.print(maxCycle);
-      lcd.print(" Finished");
+      Serial.print(maxCycle);
+      Serial.print("/");
+      Serial.print(maxCycle);
+      Serial.println(" Finished");
     } else {
-      lcd.setCursor(0, 0);
-      lcd.print(cycle);
-      lcd.print("/");
-      lcd.print(maxCycle);
-      lcd.print(" ");
+      Serial.print(cycle);
+      Serial.print("/");
+      Serial.print(maxCycle);
+      Serial.print(" ");
     }
     
-    int timeBegin = millis()/60000;
-    lcd.print(timeBegin);
-    lcd.print("min begin");
-    lcd.print("              ");
+    uint32_t timeBegin = millis()/60000;
+    Serial.print(timeBegin);
+    Serial.println("min begin");
   }
 }
